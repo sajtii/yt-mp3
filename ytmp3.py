@@ -83,51 +83,71 @@ def download(url):
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info_dict = ydl.extract_info(url, download=True)
         info = info_dict.copy()
-        info['ext'] = 'mp3'
         name = os.path.splitext(ydl.prepare_filename(info))[0]
         return name
 
 
 def crop_cover(filename):
-    if idc:
-      crop_target = 'f'
-    else:
-        print('Where would you like to crop the cover art?')
+    path = os.path.join(def_dir, filename + '.jpg')
+    img = Image.open(path)
+    width, height = img.size
+    crop_left, crop_middle, crop_right, crop_full = None, None, None, None
+    preview_path = None
+    if not idc:
+        x = 0
+        crop_left = img.crop((x, 0, x + height, height))
+        crop_left = crop_left.resize((width, width), Image.Resampling.LANCZOS)
+        x = (width // 2) - (height // 2)
+        crop_middle = img.crop((x, 0, x + height, height))
+        crop_middle = crop_middle.resize((width, width), Image.Resampling.LANCZOS)
+        x = width - height
+        crop_right = img.crop((x, 0, x + height, height))
+        crop_right = crop_right.resize((width, width), Image.Resampling.LANCZOS)
+
+    crop_full = Image.new("RGB", (width, width))
+
+    zoom_f = width / height
+    zoomed_size = (int(width * zoom_f), int(height * zoom_f))
+    zoomed_img = img.resize(zoomed_size, Image.Resampling.LANCZOS)
+
+    blurred_img = zoomed_img.filter(ImageFilter.GaussianBlur(radius=10))
+    b_width, b_height = blurred_img.size
+    x = (width // 2) - (b_width // 2)
+    y = (width // 2) - (b_height // 2)
+
+    crop_full.paste(blurred_img, (x, y))
+    y = (width // 2) - (height // 2)
+    crop_full.paste(img, (0, y))
+
+    if not idc:
+        preview = Image.new("RGB", (width * 4, width))
+        preview.paste(crop_left, (0, 0))
+        preview.paste(crop_middle, (width, 0))
+        preview.paste(crop_right, (width * 2, 0))
+        preview.paste(crop_full, (width * 3, 0))
+        preview_path = os.path.join(script_dir, 'preview.jpg')
+        preview.save(preview_path)
+        print(f"Where would you like to crop the cover art for '{os.path.basename(filename)}'?")
+        print('The preview image is available in the script’s folder.')
         while True:
             crop_target = input('r - right, m - middle, l - left, f - full size: ')
-            if crop_target in ('r','R','m','M','l','L','f','F'):
+            if crop_target in ('l', 'L'):
+                crop_left.save(path)
                 break
-    path = os.path.join(def_dir, filename + '.jpg')
-    if not crop_target in ('f', 'F'):
-        img = Image.open(path)
-        width, height = img.size
-        if crop_target in ('l', 'L'):
-            crop_x = 0
-        elif crop_target in ('m', 'M'):
-            crop_x = (width // 2) - (height // 2)
-        elif crop_target in ('r', 'R'):
-            crop_x = width - height
-        cropped_img = img.crop((crop_x, 0, crop_x + height, height))
-        cropped_img.save(path)
-    else:
-        img = Image.open(path)
-        width, height = img.size
-        canvas = Image.new("RGB", (width, width))
+            elif crop_target in ('m', 'M'):
+                crop_middle.save(path)
+                break
+            elif crop_target in ('r', 'R'):
+                crop_right.save(path)
+                break
+            elif crop_target in ('f', 'F'):
+                crop_full.save(path)
+                break
 
-        zoom_f = width / height
-        zoomed_size = (int(width * zoom_f), int(height * zoom_f))
-        zoomed_img = img.resize(zoomed_size, Image.Resampling.LANCZOS)
-
-        blurred_img = zoomed_img.filter(ImageFilter.GaussianBlur(radius=10))
-        b_width, b_height = blurred_img.size
-        x = (width // 2) - (b_width // 2)
-        y = (width // 2) - (b_height // 2)
-
-        canvas.paste(blurred_img, (x, y))
-        y = (width // 2) - (height // 2)
-        canvas.paste(img, (0, y))
-        canvas.save(path)
-
+    if idc:
+        crop_full.save(path)
+    if preview_path is not None:
+        os.remove(preview_path)
 
 def burn_cover(title):
     audio_path = os.path.join(def_dir, title + '.mp3')
@@ -151,10 +171,7 @@ def burn_cover(title):
         )
     )
     audio.save()
-
-def clean(title):
-    path = os.path.join(def_dir, title + '.jpg')
-    os.remove(path)
+    os.remove(cover_path)
 
 while True:
     com = input(">")
@@ -178,11 +195,8 @@ while True:
                 print(f'[{count}/{prog}] Downloading...')
                 title = download(i)
                 crop_cover(title)
-                print(f'[{count}/{prog}] Processing cover art...')
                 burn_cover(title)
-                print(f'[{count}/{prog}] Cleanup...')
-                clean(title)
-                print(f'[{count}/{prog}] Success!')
+                print(f"[{count}/{prog}] '{os.path.basename(title)}' successfully downloaded and processed!")
                 count += 1
     else:
         print('Unknown command or URL.')
